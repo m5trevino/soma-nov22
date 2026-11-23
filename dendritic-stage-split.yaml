@@ -1,0 +1,160 @@
+# SLICE PLAN — Dendritic Stage Split
+# Target: make the running pipeline match the HTML model
+# Repo: https://github.com/m5trevino/soma-nov21
+# Local: /home/flintx/soma-nov21
+# Format: sealed cold-start slices for slice-eater
+
+slices:
+  - slice_id: SLICE-001-extract-stage-order
+    objective: Extract the current stage sequence and StageOutput shapes from the engine and template loader into a single reference file. Do not change any behavior.
+    reads:
+      - /home/flintx/soma-nov21/soma/run_engine.py
+      - /home/flintx/soma-nov21/soma/build_soma_template.py
+      - /home/flintx/soma-nov21/soma/machine-talk/
+    writes:
+      - /home/flintx/soma-nov21/soma/docs/current-stage-order.md
+    hard_gates:
+      - id: HG-01
+        rule: write_outside_writes → ∅
+        check: only current-stage-order.md is created or modified
+        on_fail: abort
+      - id: HG-02
+        rule: prose_in_code → ∅
+        check: no comments or strings added to .py files
+        on_fail: abort
+    acceptance:
+      - id: AC-01
+        criterion: current-stage-order.md lists every TB stage in launcher order with its output root key
+        evidence: file exists and contains the sequence Distiller through OLC
+    exact_next_action:
+      action: Create /home/flintx/soma-nov21/soma/docs/current-stage-order.md
+      target: /home/flintx/soma-nov21/soma/docs/current-stage-order.md
+      done_when: file exists, contains the ordered list of stages from the engine, and no other file is modified.
+
+  - slice_id: SLICE-002-split-oc-slicer
+    objective: Extract the function-slot slicing logic out of OC into a new TB contract that only emits FunctionSlots. OC remains the decision gate.
+    reads:
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-013-oc.v2.md
+      - /home/flintx/soma-nov21/soma/docs/current-stage-order.md
+    writes:
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-015-axonhillock.v1.md
+    hard_gates:
+      - id: HG-01
+        rule: write_outside_writes → ∅
+        check: only the new tb-015 file is created
+        on_fail: abort
+      - id: HG-02
+        rule: invent_behavior → ∅
+        check: the new contract only slices; it does not implement or verify
+        on_fail: abort
+    acceptance:
+      - id: AC-01
+        criterion: tb-015-axonhillock.v1.md exists and contains IDENTITY, PROCESSING PROTOCOL, OUTPUT CONTRACT, and HARD GATES that emit only FunctionSlots
+        evidence: file present with those sections
+    exact_next_action:
+      action: Create /home/flintx/soma-nov21/soma/machine-talk/tb-015-axonhillock.v1.md
+      target: /home/flintx/soma-nov21/soma/machine-talk/tb-015-axonhillock.v1.md
+      done_when: the file is a complete machine-talk contract whose only output is FunctionSlots and whose gates forbid implementation or verification.
+
+  - slice_id: SLICE-003-add-terminal-player
+    objective: Add a TerminalPlayer contract that implements exactly one FunctionSlot and emits an ImplementationNode. It does not slice, verify, or write to disk.
+    reads:
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-015-axonhillock.v1.md
+      - /home/flintx/soma-nov21/soma/docs/current-stage-order.md
+    writes:
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-016-terminalplayer.v1.md
+    hard_gates:
+      - id: HG-01
+        rule: write_outside_writes → ∅
+        check: only the new tb-016 file is created
+        on_fail: abort
+      - id: HG-02
+        rule: multi_slot → ∅
+        check: the contract accepts and emits exactly one slot
+        on_fail: abort
+    acceptance:
+      - id: AC-01
+        criterion: tb-016-terminalplayer.v1.md exists and its OUTPUT CONTRACT emits only an ImplementationNode for one slot
+        evidence: file present with single-slot mandate
+    exact_next_action:
+      action: Create /home/flintx/soma-nov21/soma/machine-talk/tb-016-terminalplayer.v1.md
+      target: /home/flintx/soma-nov21/soma/machine-talk/tb-016-terminalplayer.v1.md
+      done_when: the file is a complete machine-talk contract that implements exactly one FunctionSlot and emits an ImplementationNode.
+
+  - slice_id: SLICE-004-add-saltatory-gate
+    objective: Add a SaltatoryGate contract that only verifies an ImplementationNode and emits VerifiedNode or FailureNode. It does not implement or write to disk.
+    reads:
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-016-terminalplayer.v1.md
+    writes:
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-017-saltatorygate.v1.md
+    hard_gates:
+      - id: HG-01
+        rule: write_outside_writes → ∅
+        check: only the new tb-017 file is created
+        on_fail: abort
+      - id: HG-02
+        rule: implementation → ∅
+        check: the contract never emits code
+        on_fail: abort
+    acceptance:
+      - id: AC-01
+        criterion: tb-017-saltatorygate.v1.md exists and its only outputs are VerifiedNode or FailureNode
+        evidence: file present with verification-only contract
+    exact_next_action:
+      action: Create /home/flintx/soma-nov21/soma/machine-talk/tb-017-saltatorygate.v1.md
+      target: /home/flintx/soma-nov21/soma/machine-talk/tb-017-saltatorygate.v1.md
+      done_when: the file is a complete machine-talk contract that verifies one ImplementationNode and emits only VerifiedNode or FailureNode.
+
+  - slice_id: SLICE-005-add-code-publisher
+    objective: Add a CodePublisher contract that reads only VerifiedNodes and writes the corresponding files to disk. It does not verify or implement.
+    reads:
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-017-saltatorygate.v1.md
+    writes:
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-018-codepublisher.v1.md
+    hard_gates:
+      - id: HG-01
+        rule: write_outside_writes → ∅
+        check: only the new tb-018 file is created
+        on_fail: abort
+      - id: HG-02
+        rule: unverified_write → ∅
+        check: the contract refuses any node that is not a VerifiedNode
+        on_fail: abort
+    acceptance:
+      - id: AC-01
+        criterion: tb-018-codepublisher.v1.md exists and its only action is writing verified file content to disk
+        evidence: file present with disk-write-only contract
+    exact_next_action:
+      action: Create /home/flintx/soma-nov21/soma/machine-talk/tb-018-codepublisher.v1.md
+      target: /home/flintx/soma-nov21/soma/machine-talk/tb-018-codepublisher.v1.md
+      done_when: the file is a complete machine-talk contract that writes only VerifiedNode content to disk and refuses everything else.
+
+  - slice_id: SLICE-006-wire-launcher
+    objective: Update the template loader and engine so the new stages (AxonHillock, TerminalPlayer, SaltatoryGate, CodePublisher) are loaded and appear in the correct order after Drafter and before the old OC/OLC path is retired.
+    reads:
+      - /home/flintx/soma-nov21/soma/build_soma_template.py
+      - /home/flintx/soma-nov21/soma/run_engine.py
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-015-axonhillock.v1.md
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-016-terminalplayer.v1.md
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-017-saltatorygate.v1.md
+      - /home/flintx/soma-nov21/soma/machine-talk/tb-018-codepublisher.v1.md
+    writes:
+      - /home/flintx/soma-nov21/soma/build_soma_template.py
+      - /home/flintx/soma-nov21/soma/run_engine.py
+    hard_gates:
+      - id: HG-01
+        rule: write_outside_writes → ∅
+        check: only the two listed files are modified
+        on_fail: abort
+      - id: HG-02
+        rule: remove_existing_stage → ∅
+        check: no existing TB contract is deleted in this slice
+        on_fail: abort
+    acceptance:
+      - id: AC-01
+        criterion: build_soma_template.py loads the four new TB files and run_engine.py lists them in the order AxonHillock → TerminalPlayer → SaltatoryGate → CodePublisher after Drafter
+        evidence: both files contain the new stage names in that order
+    exact_next_action:
+      action: Edit /home/flintx/soma-nov21/soma/build_soma_template.py and /home/flintx/soma-nov21/soma/run_engine.py
+      target: /home/flintx/soma-nov21/soma/build_soma_template.py
+      done_when: the template loader includes the four new files and the engine invokes them in the HTML order after Drafter, with no other files changed.
